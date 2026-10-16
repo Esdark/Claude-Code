@@ -785,6 +785,8 @@ async function touched($: EngineInterface, paths: string[], tone: string, show: 
   if (!t.root) return
   const within = paths.map(posix).filter(p => inside(t.root, p))
   if (within.length === 0) return
+  // One file is a read or a write the band names; a search's many are not.
+  if (paths.length === 1) await patch($, () => ({ last: within[0] }))
   if (tone !== 'purple') {
     searchIndex = null
     await staleSizes($, within)
@@ -1101,6 +1103,15 @@ async function pressHeader($: EngineInterface, id: string): Promise<void> {
   else if (id === 'external' && t.preview) await openFile($, t.preview, { mode: '' })
 }
 
+async function togglePane($: EngineInterface, root: string): Promise<void> {
+  if ((await $.ui.panes()).some(p => p.id === PANE)) await $.ui.close({ id: PANE })
+  else {
+    noDock = false
+    await $.ui.open({ id: PANE, title: `Files: ${root.split('/').pop() || root}`, focus: true })
+  }
+  void $.ui.invalidate('ui.render')
+}
+
 function shortPath(path: string): string {
   return home && inside(home, path) ? `~${path.slice(home.length)}` : path
 }
@@ -1359,6 +1370,41 @@ export const register: Register = (on, options) => {
   on('prompt.attachment', async ($, e, next) => {
     void settleBackground($, e.text)
     return next(e)
+  })
+
+  // The desktop's compact view: one line above the prompt with the folder, branch,
+  // changed files and the last file Claude read or wrote; a click opens or closes the pane.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.surface !== 'desktop' || e.props.hasSurvey) return next(e)
+    const t = await get($)
+    if (!t.root) return next(e)
+    // Other mods' bands draw beneath; the engine's own placeholder is never nested.
+    const drawn = await Promise.resolve(next(e)).catch(() => null)
+    const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? drawn : null
+    const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
+    const changed = (t.counts[t.root] ?? [0, 0, 0]).reduce((a, b) => a + b, 0)
+    const label = [
+      `${isOpen ? '▾' : '▸'} ${t.root.split('/').pop() || t.root}`,
+      t.branch?.head ?? '',
+      t.top ? (changed ? `${changed} changed` : 'clean') : '',
+      t.last ? `last ${t.last.split('/').pop()}` : '',
+    ]
+      .filter(Boolean)
+      .join('  ·  ')
+    const max = Math.max(8, e.props.bodyColumns - 2)
+    const { Box, Button } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        <Button key="filetree-band" label={label.length > max ? `${label.slice(0, max - 1)}…` : label} plain onPress={() => void togglePane($, t.root)} />
+        {below}
+      </Box>
+    )
+  })
+
+  on('ui.close', async ($, e, next) => {
+    const result = await next(e)
+    if (e.id === PANE) void $.ui.invalidate('ui.render')
+    return result
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {

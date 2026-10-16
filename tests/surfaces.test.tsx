@@ -1425,3 +1425,34 @@ test('files a Grep or Glob search returns shimmer as reads, relative names resol
   expect(await texts(ui)).toContain(shimmer('a.ts', 'purple'))
   await ui.unmount()
 })
+
+const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+
+test('desktop: a one-line band sums up the folder, branch, changes and last file, and a click opens the pane', { timeoutMs: 20_000 }, async ($, on) => {
+  const ran: Ran = []
+  const root = '/Users/k/proj'
+  const clock = world(on, {
+    os: 'darwin', env: { HOME: '/Users/k' }, cwd: root, top: root,
+    dirs: { [root]: [['src', 'dir'], ['notes.md', 'file']], [`${root}/src`]: [['a.ts', 'file']] },
+    status: '## main...origin/main\0 M src/a.ts\0?? notes.md\0', numstat: '3\t1\tsrc/a.ts\0',
+  }, ran)
+  on('ui.panes', () => ({ value: [] }))
+  await $.session.start({ cwd: root, surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  await $.tool.call({ tool: 'Edit', file_path: `${root}/src/a.ts`, old_string: 'a', new_string: 'b' } as any)
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'filetree', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 100 } as any })
+  expect((await ui.find({ key: 'filetree-band' }))?.props.label).toBe('▸ proj  ·  main  ·  2 changed  ·  last a.ts')
+  const before = opens.length
+  await ui.press({ key: 'filetree-band' })
+  await clock.settle()
+  expect(opens.length).toBe(before + 1)
+  expect(opens.at(-1)).toMatchObject({ id: 'filetree', focus: true })
+  await ui.unmount()
+  // A narrow band cuts the line instead of running past its width.
+  const narrow = await $.ui.mount({ plugin: 'filetree', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 20 } as any })
+  const label = String((await narrow.find({ key: 'filetree-band' }))?.props.label)
+  expect(label.length).toBe(18)
+  expect(label.endsWith('…')).toBe(true)
+  await narrow.unmount()
+})
