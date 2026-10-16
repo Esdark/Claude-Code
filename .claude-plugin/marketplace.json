@@ -1,0 +1,26 @@
+{
+  "name": "claude-code-mods",
+  "owner": {
+    "name": "Arjun Mohanesh"
+  },
+  "metadata": {
+    "description": "Claude Code mods for the desktop: the file tree inside the Agents pane, the agents panel and a two-line usage band"
+  },
+  "plugins": [
+    {
+      "name": "filetree",
+      "description": "An IDE-style file tree for Claude Code that shows what Claude is doing and where in files",
+      "source": "./plugins/filetree"
+    },
+    {
+      "name": "savvy-progress",
+      "description": "Progress bar above the prompt for /savvy-flow, plus an agents panel (/agents-info): running, finished and planned subagents with model, task progress, context, cost and time.",
+      "source": "./plugins/savvy-progress"
+    },
+    {
+      "name": "token-weather-usage",
+      "description": "One line above the prompt: context tokens with their weather, a bar per recent prompt, your 5-hour and 7-day limits against the time elapsed, the prompt cache with its time left, the session cost with the last prompt's share in dollars and in points of the 5-hour limit, and the subagents running. Labels in English or French. After Token Weather (Anthropic, Apache-2.0) and the ideas of usage-meter (HolyGrail) and prompt-cache-control (Daniel San).",
+      "source": "./plugins/token-weather-usage"
+    }
+  ]
+}
