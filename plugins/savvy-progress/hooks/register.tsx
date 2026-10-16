@@ -1036,7 +1036,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
     const s = tr()
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
@@ -1074,6 +1074,10 @@ export const register: Register = (on, options) => {
     if (e.surface === 'desktop' && 'Svg' in ui) {
       const { Svg } = ui
       const W = Math.max(240, Math.min(900, (e.props.bodyColumns || 40) * 8 - 8))
+      // Other mods draw beneath the agents, as in the band (filetree's tree); the engine's own
+      // placeholder is never nested.
+      const drawn = await Promise.resolve(next(e)).catch(() => null)
+      const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? drawn : null
       const section = (key: string, text: string) => (
         <Text key={key} dimColor>
           {text}
@@ -1087,6 +1091,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" gap={1} alignItems={align}>
             <Svg source={compactSvg(W, list, planned, t)} alt={`${list.length} ${s.agentsCount}, ${summary}`} width={W} height={32} />
             {toggleCompact}
+            {below}
           </Box>
         )
       }
@@ -1118,6 +1123,7 @@ export const register: Register = (on, options) => {
               <Svg key={`plan-${pl.n}`} source={plannedSvg(W, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={W} height={46} />
             ))}
           </Box>
+          {below}
         </Box>
       )
     }

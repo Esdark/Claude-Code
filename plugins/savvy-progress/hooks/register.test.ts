@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const PLUGIN = 'savvy-progress'
 const PROGRESS = 'mcp__savvy-progress__progress'
@@ -71,5 +71,36 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const started = await $.tool.call({ tool: PROGRESS, title: 'Another flow', phase: 'delegate', total: 3 } as never)
     expect(started).toMatchObject({ result: 'ok: Tasks 0/3' })
+  })
+}
+
+// Another mod's drawing beneath the Agents pane (filetree's tree) shows under the agents.
+test('desktop: the Agents pane draws what mods beneath it draw, under the agents', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.render', { component: 'Pane', requestId: 'savvy-agents' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return Text({ children: 'files below' })
+  })
+  await $.tool.call(plan as never)
+  for (const isCompact of [false, true]) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'Pane', requestId: 'savvy-agents', props: pane })
+    expect(await ui.find({ text: 'files below' })).toBeDefined()
+    if (!isCompact) await ui.press({ key: 'compact' })
+    await ui.unmount()
+  }
+})
+
+// With autoOpen "any", a plain subagent opens the Agents pane too, once.
+for (const [autoOpen, expected] of [['savvy', []], ['any', ['savvy-agents']]] as const) {
+  test(`autoOpen ${autoOpen}: a general-purpose subagent ${expected.length ? 'opens' : 'leaves closed'} the Agents pane`, { options: { autoOpen } }, async ($, on) => {
+    mock.clock(on, { now: Date.parse('2026-10-17T02:00:00Z') })
+    const opened: string[] = []
+    on('ui.open', (_$, e) => {
+      opened.push(e.id)
+      return { value: { isPlaced: true } }
+    })
+    on('agent.spawn', (_$, e) => ({ agentId: `a-${e.description}`, model: 'claude-haiku-5-5' }) as never)
+    for (const description of ['one', 'two']) await $.agent.spawn({ prompt: 'Read README.md.', description, subagentType: 'general-purpose' } as never)
+    expect(opened).toEqual([...expected])
   })
 }
