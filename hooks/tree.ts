@@ -50,7 +50,6 @@ export function emptyTree(root: string): FileTree {
     scroll: null,
     preview: '',
     previewTop: 0,
-    last: '',
   }
 }
 

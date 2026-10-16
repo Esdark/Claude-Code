@@ -53,7 +53,6 @@ export type FileTree = {
   scroll: number | null
   preview: string
   previewTop: number
-  last: string
 }
 
 export type Theme = {

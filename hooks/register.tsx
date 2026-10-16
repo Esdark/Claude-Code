@@ -39,6 +39,8 @@ const TREE = { plugin: 'filetree', key: 'tree' } as const
 const THEME = { plugin: 'filetree', key: 'theme' } as const
 const ACTIVITY = { plugin: 'filetree', key: 'activity' } as const
 const PANE = 'filetree'
+// savvy-progress's Agents pane: on the desktop the tree also draws there, below the agents.
+const HOST = 'savvy-agents'
 const SHIMMER = Object.fromEntries(Object.entries(TONES).map(([k, v]) => [k, { bright: v.bright, dim: v.dim }]))
 const LIGHT_SHIMMER = Object.fromEntries(Object.entries(LIGHT_TONES).map(([k, v]) => [k, { bright: v.bright, dim: v.dim }]))
 const BRANCH_ROW = '#branch'
@@ -785,8 +787,6 @@ async function touched($: EngineInterface, paths: string[], tone: string, show: 
   if (!t.root) return
   const within = paths.map(posix).filter(p => inside(t.root, p))
   if (within.length === 0) return
-  // One file is a read or a write the band names; a search's many are not.
-  if (paths.length === 1) await patch($, () => ({ last: within[0] }))
   if (tone !== 'purple') {
     searchIndex = null
     await staleSizes($, within)
@@ -1103,15 +1103,6 @@ async function pressHeader($: EngineInterface, id: string): Promise<void> {
   else if (id === 'external' && t.preview) await openFile($, t.preview, { mode: '' })
 }
 
-async function togglePane($: EngineInterface, root: string): Promise<void> {
-  if ((await $.ui.panes()).some(p => p.id === PANE)) await $.ui.close({ id: PANE })
-  else {
-    noDock = false
-    await $.ui.open({ id: PANE, title: `Files: ${root.split('/').pop() || root}`, focus: true })
-  }
-  void $.ui.invalidate('ui.render')
-}
-
 function shortPath(path: string): string {
   return home && inside(home, path) ? `~${path.slice(home.length)}` : path
 }
@@ -1251,7 +1242,7 @@ export const register: Register = (on, options) => {
     })
 
   on('ui.message', async ($, e, next) => {
-    if (e.requestId === PANE && e.element.startsWith('button-') && e.data && typeof e.data === 'object') {
+    if ((e.requestId === PANE || e.requestId === HOST) && e.element.startsWith('button-') && e.data && typeof e.data === 'object') {
       const id = e.element.slice('button-'.length)
       const data = e.data as { over?: unknown; press?: unknown }
       if (data.press) await pressHeader($, id)
@@ -1261,7 +1252,7 @@ export const register: Register = (on, options) => {
       }
       return {}
     }
-    if (e.requestId !== PANE || e.element !== 'rows' || !e.data || typeof e.data !== 'object') return next(e)
+    if ((e.requestId !== PANE && e.requestId !== HOST) || e.element !== 'rows' || !e.data || typeof e.data !== 'object') return next(e)
     const data = e.data as { press?: unknown; key?: unknown; ctrl?: unknown; shift?: unknown; scrollTo?: unknown; copy?: unknown }
     void sync($)
     const t = await get($)
@@ -1372,60 +1363,11 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The desktop's compact view: one line above the prompt with the folder, branch,
-  // changed files and the last file Claude read or wrote; a click opens or closes the pane.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.surface !== 'desktop' || e.props.hasSurvey) return next(e)
-    const t = await get($)
-    if (!t.root) return next(e)
-    // Other mods' bands draw beneath; the engine's own placeholder is never nested.
-    const drawn = await Promise.resolve(next(e)).catch(() => null)
-    const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? drawn : null
-    const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
-    const changed = (t.counts[t.root] ?? [0, 0, 0]).reduce((a, b) => a + b, 0)
-    const label = [
-      `${isOpen ? '▾' : '▸'} ${t.root.split('/').pop() || t.root}`,
-      t.branch?.head ?? '',
-      t.top ? (changed ? `${changed} changed` : 'clean') : '',
-      t.last ? `last ${t.last.split('/').pop()}` : '',
-    ]
-      .filter(Boolean)
-      .join('  ·  ')
-    // A second line names the subagents still at work, so a fan-out shows as it runs.
-    const agents = (await $.agent.list().catch(() => [])).filter(a => ['pending', 'running', 'waiting'].includes(a.status))
-    const crew = agents.length ? [`⧉ ${agents.length} agent${agents.length > 1 ? 's' : ''}`, ...agents.map(a => `${a.type}: ${a.description}`)].join('  ·  ') : ''
-    const max = Math.max(8, e.props.bodyColumns - 2)
-    const cut = (s: string) => (s.length > max ? `${s.slice(0, max - 1)}…` : s)
-    const { Box, Button, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column">
-        <Button key="filetree-band" label={cut(label)} plain onPress={() => void togglePane($, t.root)} />
-        {crew ? <Text key="filetree-agents" dimColor>{cut(crew)}</Text> : null}
-        {below}
-      </Box>
-    )
-  })
-
-  // Redraw the band as a subagent starts and as it ends.
-  on('agent.spawn', async ($, e, next) => {
-    const result = await next(e)
-    void $.ui.invalidate('ui.render')
-    return result
-  })
-  on('turn.complete', async ($, e, next) => {
-    const result = await next(e)
-    if (e.agentId) void $.ui.invalidate('ui.render')
-    return result
-  })
-
-  on('ui.close', async ($, e, next) => {
-    const result = await next(e)
-    if (e.id === PANE) void $.ui.invalidate('ui.render')
-    return result
-  })
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+  for (const site of [PANE, HOST]) on('ui.render', { component: 'Pane', requestId: site }, async ($, e, next) => {
     if (e.surface !== 'terminal' && e.surface !== 'desktop') return next(e)
+    if (site === HOST && e.surface !== 'desktop') return next(e)
+    // In the Agents pane the tree takes only the rows it needs, under the agents.
+    const minHeight = site === PANE ? Math.max(1, e.props.scroll?.bodyRows ?? 1) : undefined
     if (e.surface === 'terminal' && e.props.placement === 'inline') {
       noDock = true
       void $.ui.close({ id: PANE }).catch(() => undefined)
@@ -1465,7 +1407,7 @@ export const register: Register = (on, options) => {
       const name = t.preview !== t.root && inside(t.root, t.preview) ? relative(t.root, t.preview) : shortPath(t.preview)
       const external = { id: 'external', label: unicode ? '↗' : '\u{f08e}', dim: true, hint: 'open in default app' }
       return (
-        <Box flexDirection="column" minHeight={Math.max(1, e.props.scroll?.bodyRows ?? 1)} backgroundColor={theme.bg || undefined}>
+        <Box flexDirection="column" minHeight={minHeight} backgroundColor={theme.bg || undefined}>
           <Box flexDirection="row">
             <Button key="back" plain hotkey="h" autoFocus={editWithSetting || inTmux ? undefined : true} label={unicode ? '← files' : '\u{f004d} files'} onPress={() => void closePreview($)} />
             <Text> </Text>
@@ -1664,10 +1606,10 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const park = () => void $.ui.focus({ requestId: PANE, key: 'nav-o' }).catch(() => {})
+    const park = () => void $.ui.focus({ requestId: site, key: 'nav-o' }).catch(() => {})
 
     return (
-      <Box flexDirection="column" minHeight={Math.max(1, e.props.scroll?.bodyRows ?? 1)} backgroundColor={theme.bg || undefined}>
+      <Box flexDirection="column" minHeight={minHeight} backgroundColor={theme.bg || undefined}>
         <Box flexDirection="row">
           <Text bold color={theme.accent} wrap="truncate-start">
             {header}
@@ -1700,7 +1642,7 @@ export const register: Register = (on, options) => {
             <Button key={`nav-${k}`} plain dimColor hotkey={k} label={unicode ? plain : nerd} onPress={() => void navigate($, k).then(park)} />
           ))}
           <Button key="nav-o" plain dimColor autoFocus hotkey="o" label={unicode ? 'open' : '\u{f03cb} open'} onPress={() => void navigate($, 'return')} />
-          <Button key="nav-s" plain dimColor hotkey="s" label={unicode ? 'search' : '\u{f0349} search'} onPress={() => void $.ui.focus({ requestId: PANE, key: 'q' })} />
+          <Button key="nav-s" plain dimColor hotkey="s" label={unicode ? 'search' : '\u{f0349} search'} onPress={() => void $.ui.focus({ requestId: site, key: 'q' })} />
         </Box>
         <Client
           key="rows"
