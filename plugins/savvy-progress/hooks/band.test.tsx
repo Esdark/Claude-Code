@@ -31,3 +31,18 @@ test('desktop: the row is still one Svg', async ($, on) => {
   await session($, on)
   expect(await band($, 'desktop')).toEqual({ svg: 1, title: 0, label: 0 })
 })
+
+for (const [cols, full] of [[30, false], [100, true]] as const) {
+  test(`desktop: a ${cols}-column row draws nothing past its width`, async ($, on) => {
+    await session($, on)
+    const ui = await $.ui.mount({ plugin: 'savvy-progress', surface: 'desktop', ...BAND, props: { ...BAND.props, bodyColumns: cols } as never })
+    const src = String((await ui.find({ type: 'Svg' }))?.props.source)
+    await ui.unmount()
+    const num = (re: RegExp) => Number(src.match(re)?.[1])
+    // The bar, then 46px for the percent, ends inside the row.
+    expect(num(/translate\(([\d.]+),/) + num(/<rect class="k" width="([\d.]+)"/) + 46 <= num(/^<svg[^>]* width="(\d+)"/)).toBe(true)
+    // The pill and the crab show only where they fit.
+    expect(src.includes('>Tasks 1/4</text>')).toBe(full)
+    expect(src.includes('@keyframes wave')).toBe(full)
+  })
+}

@@ -272,10 +272,15 @@ const fitText = (s: string, size: number, maxW: number): string => {
 }
 
 const rowSvg = (f: Flow, W: number, isWorking: boolean): string => {
-  // The title takes what it needs, up to 40% of the row; the bar takes the rest.
-  const title = fitText(f.title, 13, Math.max(60, W * 0.4))
-  const BAR_X = Math.round(16 + textWidth(title, 13) + 12)
-  const BAR_W = Math.max(60, W - BAR_X - 46 - CRAB_W)
+  // Nothing draws past W. A narrow row drops the crab, then shrinks the title
+  // (to none below a few letters), and shows the pill only where the bar holds
+  // it; the dot, bar and percent always stay.
+  const crabSlot = W >= 280 ? CRAB_W : 0
+  const edge = W - crabSlot
+  const titleRoom = Math.min(W * 0.4, edge - 46 - 60 - 28)
+  const title = titleRoom >= 40 ? fitText(f.title, 13, titleRoom) : ''
+  const BAR_X = Math.round(title ? 16 + textWidth(title, 13) + 12 : 16)
+  const BAR_W = Math.max(20, edge - 46 - BAR_X)
   const color = f.isFinished ? DONE : ACCENT
   const y0 = (H - BAR_H) / 2
   const fillW = Math.round(BAR_W * ratio(f))
@@ -313,10 +318,15 @@ const rowSvg = (f: Flow, W: number, isWorking: boolean): string => {
   const text = label(f)
   const pillW = Math.round(18 + text.length * 6.6)
   const pillX = bx(Math.max(0, Math.min(BAR_W - pillW, fillW - pillW)), pillW)
+  const pill =
+    pillW <= BAR_W
+      ? `<rect x="${pillX}" width="${pillW}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${color}"/>
+<text x="${pillX + pillW / 2}" y="${BAR_H / 2 + 4}" text-anchor="middle"${rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="11" font-weight="600" fill="#ffffff">${xml(text)}</text>`
+      : ''
   const percent = `${Math.round(ratio(f) * 100)}%`
   // `direction="rtl"` puts Hebrew words and numbers in reading order; `start` is then the right edge.
   const titleAt = rtl ? `x="${W - 16}" direction="rtl" text-anchor="start"` : 'x="16"'
-  const percentAt = rtl ? `x="${CRAB_W + 6}" y="${H / 2 + 4.5}"` : `x="${W - CRAB_W - 6}" y="${H / 2 + 4.5}" text-anchor="end"`
+  const percentAt = rtl ? `x="${crabSlot + 6}" y="${H / 2 + 4.5}"` : `x="${edge - 6}" y="${H / 2 + 4.5}" text-anchor="end"`
   const crabW = CRAB_BOX * 0.8
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
@@ -339,11 +349,10 @@ const rowSvg = (f: Flow, W: number, isWorking: boolean): string => {
 <g fill="${color}" opacity="0.45">${faint.join('')}</g>
 <g class="tk">${ticks.join('')}</g>
 </g>
-<rect x="${pillX}" width="${pillW}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${color}"/>
-<text x="${pillX + pillW / 2}" y="${BAR_H / 2 + 4}" text-anchor="middle"${rtl ? ' direction="rtl"' : ''} font-family="${FONT}" font-size="11" font-weight="600" fill="#ffffff">${xml(text)}</text>
+${pill}
 </g>
 <text class="m" ${percentAt} font-family="${FONT}" font-size="12.5" font-variant-numeric="tabular-nums">${percent}</text>
-${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'other', false, isWorking, 0.8, rtl)}
+${crabSlot ? `${CRAB_CSS}${crab(rx(W - CRAB_W + 1, crabW), 0, 'other', false, isWorking, 0.8, rtl)}` : ''}
 </svg>`
 }
 
