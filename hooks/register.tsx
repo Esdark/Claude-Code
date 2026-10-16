@@ -1391,14 +1391,31 @@ export const register: Register = (on, options) => {
     ]
       .filter(Boolean)
       .join('  ·  ')
+    // A second line names the subagents still at work, so a fan-out shows as it runs.
+    const agents = (await $.agent.list().catch(() => [])).filter(a => ['pending', 'running', 'waiting'].includes(a.status))
+    const crew = agents.length ? [`⧉ ${agents.length} agent${agents.length > 1 ? 's' : ''}`, ...agents.map(a => `${a.type}: ${a.description}`)].join('  ·  ') : ''
     const max = Math.max(8, e.props.bodyColumns - 2)
-    const { Box, Button } = $.ui.resolve(e)
+    const cut = (s: string) => (s.length > max ? `${s.slice(0, max - 1)}…` : s)
+    const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
-        <Button key="filetree-band" label={label.length > max ? `${label.slice(0, max - 1)}…` : label} plain onPress={() => void togglePane($, t.root)} />
+        <Button key="filetree-band" label={cut(label)} plain onPress={() => void togglePane($, t.root)} />
+        {crew ? <Text key="filetree-agents" dimColor>{cut(crew)}</Text> : null}
         {below}
       </Box>
     )
+  })
+
+  // Redraw the band as a subagent starts and as it ends.
+  on('agent.spawn', async ($, e, next) => {
+    const result = await next(e)
+    void $.ui.invalidate('ui.render')
+    return result
+  })
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+    if (e.agentId) void $.ui.invalidate('ui.render')
+    return result
   })
 
   on('ui.close', async ($, e, next) => {

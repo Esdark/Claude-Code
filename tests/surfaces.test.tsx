@@ -1456,3 +1456,29 @@ test('desktop: a one-line band sums up the folder, branch, changes and last file
   expect(label.endsWith('…')).toBe(true)
   await narrow.unmount()
 })
+
+test('desktop: the band names the subagents still running on a second line', { timeoutMs: 20_000 }, async ($, on) => {
+  const ran: Ran = []
+  const root = '/Users/k/proj'
+  const clock = world(on, {
+    os: 'darwin', env: { HOME: '/Users/k' }, cwd: root, top: root,
+    dirs: { [root]: [['a.ts', 'file']] }, status: '## main\0', numstat: '',
+  }, ran)
+  on('ui.panes', () => ({ value: [] }))
+  let agents: any[] = []
+  on('agent.list', () => ({ value: agents }))
+  await $.session.start({ cwd: root, surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  const idle = await $.ui.mount({ plugin: 'filetree', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 100 } as any })
+  expect(await idle.find({ key: 'filetree-agents' })).toBeFalsy()
+  await idle.unmount()
+  agents = [
+    { id: 'a1', type: 'Explore', description: 'find band code', status: 'running' },
+    { id: 'a2', type: 'Plan', description: 'old plan', status: 'completed' },
+  ]
+  const busy = await $.ui.mount({ plugin: 'filetree', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 100 } as any })
+  const drawn = JSON.stringify(await busy.drawn())
+  expect(drawn).toContain('⧉ 1 agent  ·  Explore: find band code')
+  expect(drawn).not.toContain('old plan')
+  await busy.unmount()
+})
